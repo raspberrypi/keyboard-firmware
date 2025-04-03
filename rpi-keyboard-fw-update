@@ -1,0 +1,250 @@
+#!/bin/bash
+SCRIPT_NAME=rpi-keyboard-fw-update
+FIRMWARE_DIR=/usr/lib/firmware/raspberrypi/keyboard
+FIRMWARE_PI500=pi500-keyboard-fw.uf2
+FIRMWARE_PI500PLUS_ISO=pi500plus-keyboard-fw-iso.uf2
+FIRMWARE_PI500PLUS_ANSI=pi500plus-keyboard-fw-ansi.uf2
+FIRMWARE_PI500PLUS_JIS=pi500plus-keyboard-fw-jis.uf2
+FIRMWARE_UF2=unknown
+MODEL_STRING="Raspberry Pi 500"
+USB_VID_RASPBERRYPI=2e8a
+USB_PID_RP2040_BOOTSEL=0003
+USB_PID_PI500_KEYBOARD=0010
+USB_PID_PI500PLUS_KEYBOARD=0011
+RP2040_BOOTSEL_DRIVENAME=RPI-RP2
+DT_ROOT=/proc/device-tree
+UDEV_FILE=/etc/udev/rules.d/80-temporarily-ignore-rp2040.rules
+SILENT=0
+DEBUG=0
+
+die() {
+  if [[ $SILENT -eq 0 ]]; then
+    echo "$@" >&2
+  fi
+  exit 1
+}
+
+debug() {
+  if [[ $DEBUG -eq 1 ]]; then
+    echo "$@"
+  fi
+}
+
+cleanup() {
+	# Remove "ignore RP2040 BOOTSEL" udev rule
+  if [[ -f "$UDEV_FILE" ]]; then
+    rm -f "$UDEV_FILE"
+  fi
+}
+trap cleanup EXIT
+
+usage() {
+  cat <<EOF
+$SCRIPT_NAME [options]
+
+Update the firmware in a Pi 500 or Pi 500+ keyboard.
+
+Options:
+   -f <FILE> Use the specified UF2 file, skip auto-detection.
+   -h Display this usage message.
+   -s Silent mode.
+EOF
+  exit 0
+}
+
+while getopts f:hs option; do
+   case "${option}" in
+   f) FIRMWARE_UF2="${OPTARG}"
+      ;;
+   h) usage
+      ;;
+   s) SILENT=1
+      ;;
+   *) echo "Unknown argument \"${option}\""
+      usage
+      ;;
+   esac
+done
+
+# Detect Pi model and variant
+DT_MODEL=$(tr -d '\000' < "$DT_ROOT/model")
+debug "DT_MODEL: $DT_MODEL"
+if [[ "$DT_MODEL" != "$MODEL_STRING"* ]]; then
+  die "This script can only run on a $MODEL_STRING"
+else
+  DT_BOARDREV_EXT=$(od -v -An -t x1 "$DT_ROOT/chosen/rpi-boardrev-ext" | tr -d ' \n')
+  if [[ $(((0x$DT_BOARDREV_EXT >> 29) & 1)) -eq 1 ]]; then
+    MODEL_VARIANT=pi500plus
+  else
+    MODEL_VARIANT=pi500
+  fi
+fi
+debug "MODEL_VARIANT: $MODEL_VARIANT"
+
+if [[ "$FIRMWARE_UF2" == "unknown" ]]; then
+  # Attempt to auto-detect which UF2 file we need to flash...
+  # Detect Pi's country-code, and convert this to a keyboard layout
+  DT_COUNTRY_CODE=$(od -v -An -j3 -N1 -i "$DT_ROOT/chosen/rpi-country-code" | tr -d ' \n')
+  # see https://github.com/raspberrypi-ui/piwiz/blob/master/src/piwiz.c#L278 for reference 
+  debug "DT_COUNTRY_CODE: $DT_COUNTRY_CODE"
+  case $DT_COUNTRY_CODE in 
+    4) # US
+      CC_LAYOUT=ANSI
+      ;;
+    7) # JP
+      CC_LAYOUT=JIS
+      ;;
+    14) # IL
+      CC_LAYOUT=ANSI
+      ;;
+    16) # KR
+      CC_LAYOUT=ANSI
+      ;;
+    *) # Everything else
+      CC_LAYOUT=ISO
+      ;;
+  esac
+  debug "CC_LAYOUT: $CC_LAYOUT"
+  # Detect which USB keyboard is connected
+  DETECTED_PI500_KEYBOARD=0
+  DETECTED_PI500PLUS_KEYBOARD=0
+  DETECTED_PI500PLUS_KEYBOARD_VARIANT=unknown
+  DETECTED_KEYBOARD_FIRMWARE_VERSION=unknown
+  if lsusb -d "$USB_VID_RASPBERRYPI:$USB_PID_PI500_KEYBOARD" &> /dev/null; then
+    DETECTED_PI500_KEYBOARD=1
+    DETECTED_KEYBOARD_FIRMWARE_VERSION=$(lsusb -v -d "$USB_VID_RASPBERRYPI:$USB_PID_PI500_KEYBOARD" 2> /dev/null | grep bcdDevice | tr -s " " | cut -d" " -f3)
+  fi
+  debug "DETECTED_PI500_KEYBOARD: $DETECTED_PI500_KEYBOARD"
+  if lsusb -d "$USB_VID_RASPBERRYPI:$USB_PID_PI500PLUS_KEYBOARD" &> /dev/null; then
+    DETECTED_PI500PLUS_KEYBOARD=1
+    DETECTED_KEYBOARD_FIRMWARE_VERSION=$(lsusb -v -d "$USB_VID_RASPBERRYPI:$USB_PID_PI500PLUS_KEYBOARD" 2> /dev/null | grep bcdDevice | tr -s " " | cut -d" " -f3)
+    KEYBOARD_PRODUCT=$(lsusb -v -d "$USB_VID_RASPBERRYPI:$USB_PID_PI500PLUS_KEYBOARD" 2> /dev/null | grep iProduct | tr -s " " | cut -d" " -f4-)
+    for VARIANT in ISO ANSI JIS; do
+      if [[ "$KEYBOARD_PRODUCT" == *"($VARIANT)" ]]; then
+        DETECTED_PI500PLUS_KEYBOARD_VARIANT=$VARIANT
+        break
+      fi
+    done
+    if [[ "$DETECTED_PI500PLUS_KEYBOARD_VARIANT" == "unknown" ]]; then
+      die "Unexpected Pi 500+ keyboard variant: $KEYBOARD_PRODUCT"
+    fi
+  fi
+  debug "DETECTED_PI500PLUS_KEYBOARD: $DETECTED_PI500PLUS_KEYBOARD"
+  debug "DETECTED_PI500PLUS_KEYBOARD_VARIANT: $DETECTED_PI500PLUS_KEYBOARD_VARIANT"
+  debug "DETECTED_KEYBOARD_FIRMWARE_VERSION: $DETECTED_KEYBOARD_FIRMWARE_VERSION"
+  if [[ "$MODEL_VARIANT" == "pi500" ]] && [[ $DETECTED_PI500PLUS_KEYBOARD -eq 1 ]]; then
+    die "Pi firmware thinks this is a Pi 500, but the keyboard thinks it's a Pi 500+"
+  fi
+  if [[ "$MODEL_VARIANT" == "pi500plus" ]] && [[ $DETECTED_PI500_KEYBOARD -eq 1 ]]; then
+    die "Pi firmware thinks this is a Pi 500+, but the keyboard thinks it's a Pi 500"
+  fi
+  if [[ "$MODEL_VARIANT" == "pi500plus" ]] && [[ $DETECTED_PI500PLUS_KEYBOARD -eq 1 ]]; then
+    if [[ "$CC_LAYOUT" != "$DETECTED_PI500PLUS_KEYBOARD_VARIANT" ]]; then
+      die "Pi firmware thinks this is a Pi 500+ with a $CC_LAYOUT keyboard, but the keyboard thinks it has a $DETECTED_PI500PLUS_KEYBOARD_VARIANT layout"
+    fi
+  fi
+  if [[ "$MODEL_VARIANT" == "pi500" ]]; then
+    FIRMWARE_FILE=$FIRMWARE_PI500
+  elif [[ "$MODEL_VARIANT" == "pi500plus" ]]; then
+    if [[ $CC_LAYOUT == "ISO" ]]; then
+      FIRMWARE_FILE=$FIRMWARE_PI500PLUS_ISO
+    elif [[ $CC_LAYOUT == "ANSI" ]]; then
+      FIRMWARE_FILE=$FIRMWARE_PI500PLUS_ANSI
+    elif [[ $CC_LAYOUT == "JIS" ]]; then
+      FIRMWARE_FILE=$FIRMWARE_PI500PLUS_JIS
+    else
+      die "Unexpected keyboard layout: $CC_LAYOUT"
+    fi
+  fi
+  FIRMWARE_FILE_VERSION=unknown
+  if [[ -f "$FIRMWARE_DIR/versions.txt" ]]; then
+    if FIRMWARE_LINE=$(grep "$FIRMWARE_FILE" "$FIRMWARE_DIR/versions.txt"); then
+      FIRMWARE_FILE_VERSION=$(echo "$FIRMWARE_LINE" | cut -d"=" -f2)
+    fi
+  fi
+  debug "FIRMWARE_FILE_VERSION: $FIRMWARE_FILE_VERSION"
+  if [[ "$DETECTED_KEYBOARD_FIRMWARE_VERSION" != "unknown" ]] && [[ "$FIRMWARE_FILE_VERSION" != "unknown" ]] && [[ "$DETECTED_KEYBOARD_FIRMWARE_VERSION" == "$FIRMWARE_FILE_VERSION" ]]; then
+    if [[ $SILENT -eq 0 ]]; then
+      echo "Your keyboard firmware is already up to date"
+    fi
+    exit 0
+  fi
+  FIRMWARE_UF2="$FIRMWARE_DIR/$FIRMWARE_FILE"
+fi
+
+debug "FIRMWARE_UF2: $FIRMWARE_UF2"
+if [[ ! -f "$FIRMWARE_UF2" ]]; then
+  die "Required firmware file $FIRMWARE_UF2 is missing"
+else
+  # Everything before this line is just gathering information, and runs fine without root access
+  if [[ $(id -u) -ne 0 ]]; then
+    die "This script must be run as root. Try 'sudo $SCRIPT_NAME'"
+  fi
+  # Hold keyboard in reset
+  pinctrl set KEYB_RUN op pn dl
+  # Store the list of xxxx1 partitions
+  declare -a OLD_FIRST_PARTS
+  while read -r PART; do
+    OLD_FIRST_PARTS+=("$PART")
+  done <<< "$(lsblk -n -o PATH | grep '1$')"
+  OLD_DRIVE_COUNT=$(lsblk -nl | wc -l)
+  # Add "ignore RP2040 BOOTSEL" udev rule to stop drive-automounting and prevent GUI popups
+  echo "ENV{ID_FS_TYPE}==\"vfat\", ENV{ID_FS_LABEL}==\"$RP2040_BOOTSEL_DRIVENAME\", ENV{UDISKS_IGNORE}=\"1\"" > "$UDEV_FILE"
+  udevadm control --reload-rules
+  # Trigger keyboard's BOOTSEL mode
+  pinctrl set KEYB_BOOTSEL op pn dh
+  pinctrl set KEYB_RUN dh
+  pinctrl set KEYB_BOOTSEL dl
+  # Wait up to 10 seconds for a new drive to appear
+  LOOP_COUNT=20
+  while [[ $LOOP_COUNT -gt 0 ]] && [[ $(lsblk -nl | wc -l) -eq $OLD_DRIVE_COUNT ]]; do
+    sleep 0.5
+    LOOP_COUNT=$((LOOP_COUNT - 1))
+  done
+  if [[ $LOOP_COUNT -eq 0 ]]; then
+    die "Timed out waiting for BOOTSEL drive to appear"
+  fi
+  # Look for a xxxx1 partition which wasn't in OLD_FIRST_PARTS
+  declare -a NEW_FIRST_PARTS
+  while read -r PART; do
+    FOUND=0
+    for OLD_PART in "${OLD_FIRST_PARTS[@]}"; do
+      if [[ "$PART" == "$OLD_PART" ]]; then
+        FOUND=1
+        break
+      fi
+    done
+    if [[ $FOUND -eq 0 ]]; then
+      NEW_FIRST_PARTS+=("$PART")
+    fi
+  done <<< "$(lsblk -n -o PATH | grep '1$')"
+  if [[ ${#NEW_FIRST_PARTS[@]} -eq 1 ]]; then
+    DRIVE=${NEW_FIRST_PARTS[0]}
+    debug "New drive is $DRIVE"
+    # Need to wait for udevadm to settle before udevadm info returns all fields
+    udevadm settle
+    # Check that the new drive is indeed an RP2040 in BOOTSEL mode
+    if udevadm info "$DRIVE" | grep -q "ID_USB_VENDOR_ID=$USB_VID_RASPBERRYPI" && udevadm info "$DRIVE" | grep -q "ID_USB_MODEL_ID=$USB_PID_RP2040_BOOTSEL"; then
+      # Mount the drive
+      MOUNTPATH=$(mktemp -d)
+      mount "$DRIVE" "$MOUNTPATH"
+      # Copy new firmware to the drive
+      cp "$FIRMWARE_UF2" "$MOUNTPATH"
+      # Cleanup
+      sync
+      umount "$MOUNTPATH"
+      rmdir "$MOUNTPATH"
+    else
+      die "$DRIVE isn't an RP2040 in BOOTSEL mode"
+    fi
+    # Remove "ignore RP2040 BOOTSEL" udev rule
+    rm "$UDEV_FILE"
+    udevadm control --reload-rules
+    if [[ $SILENT -eq 0 ]]; then
+      echo "Your keyboard firmware has been updated with $FIRMWARE_UF2"
+    fi
+    exit 0
+  else
+    die "Couldn't detect BOOTSEL drive"
+  fi
+fi
