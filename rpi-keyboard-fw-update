@@ -31,7 +31,7 @@ debug() {
 }
 
 cleanup() {
-	# Remove "ignore RP2040 BOOTSEL" udev rule
+  # Remove "ignore RP2040 BOOTSEL" udev rule
   if [[ -f "$UDEV_FILE" ]]; then
     rm -f "$UDEV_FILE"
   fi
