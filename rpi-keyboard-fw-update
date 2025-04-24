@@ -56,6 +56,65 @@ EOF
   exit 0
 }
 
+wait_for_bootsel_drive () {
+  debug "Waiting for BOOTSEL drive"
+  # Wait up to 15 seconds for a new BOOTSEL drive to appear
+  LOOP_COUNT=30
+  FOUND_BOOTSEL_DRIVE=0
+  # Store the list of xxxx1 partitions
+  OLD_FIRST_PARTS=()
+  while read -r PART; do
+    OLD_FIRST_PARTS+=("$PART")
+  done <<< "$(lsblk -n -o PATH | grep '1$')"
+  while [[ $LOOP_COUNT -gt 0 ]]; do
+    sleep 0.5
+    LOOP_COUNT=$((LOOP_COUNT - 1))
+    ALL_FIRST_PARTS=()
+    while read -r PART; do
+      ALL_FIRST_PARTS+=("$PART")
+    done <<< "$(lsblk -n -o PATH | grep '1$')"
+    if [[ ${#ALL_FIRST_PARTS[@]} -ne ${#OLD_FIRST_PARTS[@]} ]]; then
+      # Wait for udevadm to settle
+      udevadm settle
+      # Look for any xxxx1 partitions which weren't in OLD_FIRST_PARTS
+      NEW_FIRST_PARTS=()
+      for PART in "${ALL_FIRST_PARTS[@]}"; do
+        FOUND=0
+        for OLD_PART in "${OLD_FIRST_PARTS[@]}"; do
+          if [[ "$PART" == "$OLD_PART" ]]; then
+            FOUND=1
+            break
+          fi
+        done
+        if [[ $FOUND -eq 0 ]]; then
+          NEW_FIRST_PARTS+=("$PART")
+        fi
+      done
+      # Update the list of xxxx1 partitions
+      OLD_FIRST_PARTS=("${ALL_FIRST_PARTS[@]}")
+      for DRIVE in "${NEW_FIRST_PARTS[@]}"; do
+        debug "Candidate drive: $DRIVE"
+        # Check that the new drive is an RP2040 in BOOTSEL mode
+        DRIVE_INFO="$(udevadm info "$DRIVE")"
+        if echo "$DRIVE_INFO" | grep -q "ID_USB_VENDOR_ID=$USB_VID_RASPBERRYPI" && echo "$DRIVE_INFO" | grep -q "ID_USB_MODEL_ID=$USB_PID_RP2040_BOOTSEL"; then
+          debug "Found BOOTSEL drive $DRIVE"
+          FOUND_BOOTSEL_DRIVE=1
+          echo "$DRIVE"
+          break
+        else
+          debug "$DRIVE isn't an RP2040 in BOOTSEL mode"
+        fi
+      done
+      if [[ $FOUND_BOOTSEL_DRIVE -eq 1 ]]; then
+        break
+      fi
+    fi
+  done
+  if [[ $LOOP_COUNT -eq 0 ]]; then
+    die "Timed out waiting for BOOTSEL drive to appear"
+  fi
+}
+
 while getopts f:hisv option; do
    case "${option}" in
    f) FIRMWARE_UF2="${OPTARG}"
@@ -195,71 +254,32 @@ else
   if [[ $(id -u) -ne 0 ]]; then
     die "This script must be run as root. Try 'sudo $SCRIPT_NAME'"
   fi
-  # Hold keyboard in reset
-  pinctrl set KEYB_RUN op pn dl
-  # Store the list of xxxx1 partitions
-  declare -a OLD_FIRST_PARTS
-  while read -r PART; do
-    OLD_FIRST_PARTS+=("$PART")
-  done <<< "$(lsblk -n -o PATH | grep '1$')"
-  OLD_DRIVE_COUNT=$(lsblk -nl | wc -l)
   # Add "ignore RP2040 BOOTSEL" udev rule to stop drive-automounting and prevent GUI popups
   echo "ENV{ID_FS_TYPE}==\"vfat\", ENV{ID_FS_LABEL}==\"$RP2040_BOOTSEL_DRIVENAME\", ENV{UDISKS_IGNORE}=\"1\"" > "$UDEV_FILE"
   udevadm control --reload-rules
   # Trigger keyboard's BOOTSEL mode
+  pinctrl set KEYB_RUN op pn dl
   pinctrl set KEYB_BOOTSEL op pn dh
   pinctrl set KEYB_RUN dh
   pinctrl set KEYB_BOOTSEL dl
-  # Wait up to 10 seconds for a new drive to appear
-  LOOP_COUNT=20
-  while [[ $LOOP_COUNT -gt 0 ]] && [[ $(lsblk -nl | wc -l) -eq $OLD_DRIVE_COUNT ]]; do
-    sleep 0.5
-    LOOP_COUNT=$((LOOP_COUNT - 1))
-  done
-  if [[ $LOOP_COUNT -eq 0 ]]; then
-    die "Timed out waiting for BOOTSEL drive to appear"
+  # Wait for BOOTSEL drive to appear
+  NEW_DRIVE=$(wait_for_bootsel_drive)
+  if [[ -z "$NEW_DRIVE" ]]; then
+    die "No BOOTSEL drive appeared"
   fi
-  # Look for a xxxx1 partition which wasn't in OLD_FIRST_PARTS
-  declare -a NEW_FIRST_PARTS
-  while read -r PART; do
-    FOUND=0
-    for OLD_PART in "${OLD_FIRST_PARTS[@]}"; do
-      if [[ "$PART" == "$OLD_PART" ]]; then
-        FOUND=1
-        break
-      fi
-    done
-    if [[ $FOUND -eq 0 ]]; then
-      NEW_FIRST_PARTS+=("$PART")
-    fi
-  done <<< "$(lsblk -n -o PATH | grep '1$')"
-  if [[ ${#NEW_FIRST_PARTS[@]} -eq 1 ]]; then
-    DRIVE=${NEW_FIRST_PARTS[0]}
-    debug "New drive is $DRIVE"
-    # Need to wait for udevadm to settle before udevadm info returns all fields
-    udevadm settle
-    # Check that the new drive is indeed an RP2040 in BOOTSEL mode
-    if udevadm info "$DRIVE" | grep -q "ID_USB_VENDOR_ID=$USB_VID_RASPBERRYPI" && udevadm info "$DRIVE" | grep -q "ID_USB_MODEL_ID=$USB_PID_RP2040_BOOTSEL"; then
-      # Mount the drive
-      MOUNTPATH=$(mktemp -d)
-      mount "$DRIVE" "$MOUNTPATH"
-      # Copy new firmware to the drive
-      cp "$FIRMWARE_UF2" "$MOUNTPATH"
-      # Cleanup
-      sync
-      umount "$MOUNTPATH"
-      rmdir "$MOUNTPATH"
-    else
-      die "$DRIVE isn't an RP2040 in BOOTSEL mode"
-    fi
-    # Remove "ignore RP2040 BOOTSEL" udev rule
-    rm "$UDEV_FILE"
-    udevadm control --reload-rules
-    if [[ $SILENT -eq 0 ]]; then
-      echo "Your keyboard firmware has been updated with $FIRMWARE_UF2"
-    fi
-    exit 0
-  else
-    die "Couldn't detect BOOTSEL drive"
+  MOUNTPATH=$(mktemp -d)
+  # Copy new firmware to the drive
+  debug "Writing new firmware"
+  mount "$NEW_DRIVE" "$MOUNTPATH"
+  cp "$FIRMWARE_UF2" "$MOUNTPATH"
+  sync
+  umount "$MOUNTPATH"
+  # Cleanup
+  rmdir "$MOUNTPATH"
+  # Remove "ignore RP2040 BOOTSEL" udev rule
+  rm "$UDEV_FILE"
+  udevadm control --reload-rules
+  if [[ $SILENT -eq 0 ]]; then
+    echo "Your keyboard firmware has been updated with $FIRMWARE_UF2"
   fi
 fi
