@@ -15,18 +15,20 @@ RP2040_BOOTSEL_DRIVENAME=RPI-RP2
 DT_ROOT=/proc/device-tree
 UDEV_FILE=/etc/udev/rules.d/80-temporarily-ignore-rp2040.rules
 SILENT=0
-DEBUG=0
+DEBUG=${DEBUG:-0}
+COMPARE_VERSIONS=1
+VERSION_CHECK_ONLY=0
 
 die() {
   if [[ $SILENT -eq 0 ]]; then
-    echo "$@" >&2
+    echo -e "$@" >&2
   fi
   exit 1
 }
 
 debug() {
   if [[ $DEBUG -eq 1 ]]; then
-    echo "$@"
+    echo "$@" >&2
   fi
 }
 
@@ -45,20 +47,30 @@ $SCRIPT_NAME [options]
 Update the firmware in a Pi 500 or Pi 500+ keyboard.
 
 Options:
-   -f <FILE> Use the specified UF2 file, skip auto-detection.
+   -f <FILE> Use the specified UF2 file (skips model auto-detection).
    -h Display this usage message.
+   -i Ignore version checks and always update firmware.
    -s Silent mode.
+   -v Detect keyboard type and firmware version.
 EOF
   exit 0
 }
 
-while getopts f:hs option; do
+while getopts f:hisv option; do
    case "${option}" in
    f) FIRMWARE_UF2="${OPTARG}"
+      if [[ "${FIRMWARE_UF2##*.}" != "uf2" ]]; then
+        die "$FIRMWARE_UF2 must be a uf2 file"
+      fi
       ;;
    h) usage
       ;;
+   i) COMPARE_VERSIONS=0
+      ;;
    s) SILENT=1
+      ;;
+   v) VERSION_CHECK_ONLY=1
+      DEBUG=1
       ;;
    *) echo "Unknown argument \"${option}\""
       usage
@@ -82,7 +94,7 @@ fi
 debug "MODEL_VARIANT: $MODEL_VARIANT"
 
 if [[ "$FIRMWARE_UF2" == "unknown" ]]; then
-  # Attempt to auto-detect which UF2 file we need to flash...
+  # Attempt to auto-detect which UF2 file is needed
   # Detect Pi's country-code, and convert this to a keyboard layout
   DT_COUNTRY_CODE=$(od -v -An -j3 -N1 -i "$DT_ROOT/chosen/rpi-country-code" | tr -d ' \n')
   # see https://github.com/raspberrypi-ui/piwiz/blob/master/src/piwiz.c#L278 for reference 
@@ -132,15 +144,18 @@ if [[ "$FIRMWARE_UF2" == "unknown" ]]; then
   debug "DETECTED_PI500PLUS_KEYBOARD: $DETECTED_PI500PLUS_KEYBOARD"
   debug "DETECTED_PI500PLUS_KEYBOARD_VARIANT: $DETECTED_PI500PLUS_KEYBOARD_VARIANT"
   debug "DETECTED_KEYBOARD_FIRMWARE_VERSION: $DETECTED_KEYBOARD_FIRMWARE_VERSION"
+  if [[ $VERSION_CHECK_ONLY -eq 1 ]]; then
+    exit 0
+  fi
   if [[ "$MODEL_VARIANT" == "pi500" ]] && [[ $DETECTED_PI500PLUS_KEYBOARD -eq 1 ]]; then
-    die "Pi firmware thinks this is a Pi 500, but the keyboard thinks it's a Pi 500+"
+    die "Pi firmware thinks this is a Pi 500, but the keyboard thinks it's a Pi 500+\nPlease use the -f option to manually select a UF2 file"
   fi
   if [[ "$MODEL_VARIANT" == "pi500plus" ]] && [[ $DETECTED_PI500_KEYBOARD -eq 1 ]]; then
-    die "Pi firmware thinks this is a Pi 500+, but the keyboard thinks it's a Pi 500"
+    die "Pi firmware thinks this is a Pi 500+, but the keyboard thinks it's a Pi 500\nPlease use the -f option to manually select a UF2 file"
   fi
   if [[ "$MODEL_VARIANT" == "pi500plus" ]] && [[ $DETECTED_PI500PLUS_KEYBOARD -eq 1 ]]; then
     if [[ "$CC_LAYOUT" != "$DETECTED_PI500PLUS_KEYBOARD_VARIANT" ]]; then
-      die "Pi firmware thinks this is a Pi 500+ with a $CC_LAYOUT keyboard, but the keyboard thinks it has a $DETECTED_PI500PLUS_KEYBOARD_VARIANT layout"
+      die "Pi firmware thinks this is a Pi 500+ with a $CC_LAYOUT keyboard, but the keyboard thinks it has a $DETECTED_PI500PLUS_KEYBOARD_VARIANT layout\nPlease use the -f option to manually select a UF2 file"
     fi
   fi
   if [[ "$MODEL_VARIANT" == "pi500" ]]; then
@@ -163,7 +178,7 @@ if [[ "$FIRMWARE_UF2" == "unknown" ]]; then
     fi
   fi
   debug "FIRMWARE_FILE_VERSION: $FIRMWARE_FILE_VERSION"
-  if [[ "$DETECTED_KEYBOARD_FIRMWARE_VERSION" != "unknown" ]] && [[ "$FIRMWARE_FILE_VERSION" != "unknown" ]] && [[ "$DETECTED_KEYBOARD_FIRMWARE_VERSION" == "$FIRMWARE_FILE_VERSION" ]]; then
+  if [[ $COMPARE_VERSIONS -eq 1 ]] && [[ "$DETECTED_KEYBOARD_FIRMWARE_VERSION" != "unknown" ]] && [[ "$FIRMWARE_FILE_VERSION" != "unknown" ]] && [[ "$DETECTED_KEYBOARD_FIRMWARE_VERSION" == "$FIRMWARE_FILE_VERSION" ]]; then
     if [[ $SILENT -eq 0 ]]; then
       echo "Your keyboard firmware is already up to date"
     fi
