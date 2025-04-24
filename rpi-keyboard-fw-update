@@ -18,6 +18,7 @@ SILENT=0
 DEBUG=${DEBUG:-0}
 COMPARE_VERSIONS=1
 VERSION_CHECK_ONLY=0
+WIPE_FIRST=0
 
 die() {
   if [[ $SILENT -eq 0 ]]; then
@@ -52,6 +53,7 @@ Options:
    -i Ignore version checks and always update firmware.
    -s Silent mode.
    -v Detect keyboard type and firmware version.
+   -w Wipe entire flash before updating firmware.
 EOF
   exit 0
 }
@@ -115,7 +117,7 @@ wait_for_bootsel_drive () {
   fi
 }
 
-while getopts f:hisv option; do
+while getopts f:hisvw option; do
    case "${option}" in
    f) FIRMWARE_UF2="${OPTARG}"
       if [[ "${FIRMWARE_UF2##*.}" != "uf2" ]]; then
@@ -130,6 +132,8 @@ while getopts f:hisv option; do
       ;;
    v) VERSION_CHECK_ONLY=1
       DEBUG=1
+      ;;
+   w) WIPE_FIRST=1
       ;;
    *) echo "Unknown argument \"${option}\""
       usage
@@ -268,6 +272,20 @@ else
     die "No BOOTSEL drive appeared"
   fi
   MOUNTPATH=$(mktemp -d)
+  if [[ $WIPE_FIRST -eq 1 ]]; then
+    # Use flash_nuke to wipe flash
+    debug "Erasing flash"
+    mount "$NEW_DRIVE" "$MOUNTPATH"
+    cp "$FIRMWARE_DIR/flash_nuke.uf2" "$MOUNTPATH"
+    sync
+    umount "$MOUNTPATH"
+    sleep 0.5
+    # Wait for BOOTSEL drive to re-appear (which indicates the flash has been fully erased)
+    NEW_DRIVE=$(wait_for_bootsel_drive)
+    if [[ -z "$NEW_DRIVE" ]]; then
+      die "No BOOTSEL drive appeared after erasing flash"
+    fi
+  fi
   # Copy new firmware to the drive
   debug "Writing new firmware"
   mount "$NEW_DRIVE" "$MOUNTPATH"
