@@ -1,0 +1,5 @@
+.debhelper/
+debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/rpi-keyboard-fw-update/

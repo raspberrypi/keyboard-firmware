@@ -1,0 +1,2 @@
+rpi-keyboard-fw-update /usr/bin
+keyboard/ /usr/lib/firmware/raspberrypi

@@ -1,0 +1,5 @@
+rpi-keyboard-fw-update (1.0) UNRELEASED; urgency=medium
+
+  * Initial release.
+
+ -- Andrew Scheller <andrew.scheller@raspberrypi.com>  Thu, 24 Apr 2025 17:31:16 +0100

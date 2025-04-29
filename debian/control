@@ -1,0 +1,12 @@
+Source: rpi-keyboard-fw-update
+Maintainer: Andrew Scheller <andrew.scheller@raspberrypi.com>
+Section: misc
+Priority: optional
+Standards-Version: 4.7.0
+Build-Depends: debhelper-compat (= 13)
+
+Package: rpi-keyboard-fw-update
+Architecture: all
+Depends: ${misc:Depends}, usbutils, raspi-utils-core, mount, udev
+Description: Keyboard firmware updater
+ A tool to update the keyboard firmware in the Raspberry Pi 500 or 500+.
