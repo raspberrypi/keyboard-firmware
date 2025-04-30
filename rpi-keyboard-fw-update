@@ -12,6 +12,8 @@ USB_PID_RP2040_BOOTSEL=0003
 USB_PID_PI500_KEYBOARD=0010
 USB_PID_PI500PLUS_KEYBOARD=0011
 RP2040_BOOTSEL_DRIVENAME=RPI-RP2
+KEYB_BOOTSEL=118
+KEYB_RUN=121
 DT_ROOT=/proc/device-tree
 UDEV_FILE=/etc/udev/rules.d/80-temporarily-ignore-rp2040.rules
 SILENT=0
@@ -262,10 +264,10 @@ else
   echo "ENV{ID_FS_TYPE}==\"vfat\", ENV{ID_FS_LABEL}==\"$RP2040_BOOTSEL_DRIVENAME\", ENV{UDISKS_IGNORE}=\"1\"" > "$UDEV_FILE"
   udevadm control --reload-rules
   # Trigger keyboard's BOOTSEL mode
-  pinctrl set KEYB_RUN op pn dl
-  pinctrl set KEYB_BOOTSEL op pn dh
-  pinctrl set KEYB_RUN dh
-  pinctrl set KEYB_BOOTSEL dl
+  pinctrl set $KEYB_RUN op pn dl
+  pinctrl set $KEYB_BOOTSEL op pn dh
+  pinctrl set $KEYB_RUN dh
+  pinctrl set $KEYB_BOOTSEL dl
   # Wait for BOOTSEL drive to appear
   NEW_DRIVE=$(wait_for_bootsel_drive)
   if [[ -z "$NEW_DRIVE" ]]; then
