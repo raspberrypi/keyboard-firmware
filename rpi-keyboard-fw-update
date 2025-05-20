@@ -60,6 +60,21 @@ EOF
   exit 0
 }
 
+force_reset () {
+  RUN_GPIO=$1
+  pinctrl set $RUN_GPIO op pn dl
+  pinctrl set $RUN_GPIO dh
+}
+
+force_bootsel_mode () {
+  RUN_GPIO=$1
+  BOOTSEL_GPIO=$2
+  pinctrl set $RUN_GPIO op pn dl
+  pinctrl set $BOOTSEL_GPIO op pn dh
+  pinctrl set $RUN_GPIO dh
+  pinctrl set $BOOTSEL_GPIO dl
+}
+
 wait_for_bootsel_drive () {
   debug "Waiting for BOOTSEL drive"
   # Wait up to 15 seconds for a new BOOTSEL drive to appear
@@ -117,6 +132,17 @@ wait_for_bootsel_drive () {
   if [[ $LOOP_COUNT -eq 0 ]]; then
     die "Timed out waiting for BOOTSEL drive to appear"
   fi
+}
+
+copy_uf2_to_drive() {
+  UF2_FILE=$1
+  DRIVE=$2
+  MOUNTPATH=$(mktemp -d)
+  mount "$DRIVE" "$MOUNTPATH"
+  cp "$UF2_FILE" "$MOUNTPATH"
+  sync
+  umount "$MOUNTPATH"
+  rmdir "$MOUNTPATH"
 }
 
 while getopts f:hisvw option; do
@@ -264,23 +290,16 @@ else
   echo "ENV{ID_FS_TYPE}==\"vfat\", ENV{ID_FS_LABEL}==\"$RP2040_BOOTSEL_DRIVENAME\", ENV{UDISKS_IGNORE}=\"1\"" > "$UDEV_FILE"
   udevadm control --reload-rules
   # Trigger keyboard's BOOTSEL mode
-  pinctrl set $KEYB_RUN op pn dl
-  pinctrl set $KEYB_BOOTSEL op pn dh
-  pinctrl set $KEYB_RUN dh
-  pinctrl set $KEYB_BOOTSEL dl
+  force_bootsel_mode $KEYB_RUN $KEYB_BOOTSEL
   # Wait for BOOTSEL drive to appear
   NEW_DRIVE=$(wait_for_bootsel_drive)
   if [[ -z "$NEW_DRIVE" ]]; then
     die "No BOOTSEL drive appeared"
   fi
-  MOUNTPATH=$(mktemp -d)
   if [[ $WIPE_FIRST -eq 1 ]]; then
     # Use flash_nuke to wipe flash
     debug "Erasing flash"
-    mount "$NEW_DRIVE" "$MOUNTPATH"
-    cp "$FIRMWARE_DIR/flash_nuke.uf2" "$MOUNTPATH"
-    sync
-    umount "$MOUNTPATH"
+    copy_uf2_to_drive "$FIRMWARE_DIR/flash_nuke.uf2" "$NEW_DRIVE"
     sleep 0.5
     # Wait for BOOTSEL drive to re-appear (which indicates the flash has been fully erased)
     NEW_DRIVE=$(wait_for_bootsel_drive)
@@ -290,12 +309,7 @@ else
   fi
   # Copy new firmware to the drive
   debug "Writing new firmware"
-  mount "$NEW_DRIVE" "$MOUNTPATH"
-  cp "$FIRMWARE_UF2" "$MOUNTPATH"
-  sync
-  umount "$MOUNTPATH"
-  # Cleanup
-  rmdir "$MOUNTPATH"
+  copy_uf2_to_drive "$FIRMWARE_UF2" "$NEW_DRIVE"
   # Remove "ignore RP2040 BOOTSEL" udev rule
   rm "$UDEV_FILE"
   udevadm control --reload-rules
