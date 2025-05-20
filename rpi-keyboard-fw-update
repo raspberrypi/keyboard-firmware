@@ -209,9 +209,6 @@ if [[ "$FIRMWARE_UF2" == "unknown" ]]; then
   debug "DETECTED_PI500PLUS_KEYBOARD: $DETECTED_PI500PLUS_KEYBOARD"
   debug "DETECTED_PI500PLUS_KEYBOARD_VARIANT: $DETECTED_PI500PLUS_KEYBOARD_VARIANT"
   debug "DETECTED_KEYBOARD_FIRMWARE_VERSION: $DETECTED_KEYBOARD_FIRMWARE_VERSION"
-  if [[ $VERSION_CHECK_ONLY -eq 1 ]]; then
-    exit 0
-  fi
   if [[ "$MODEL_VARIANT" == "pi500" ]] && [[ $DETECTED_PI500PLUS_KEYBOARD -eq 1 ]]; then
     die "Pi firmware thinks this is a Pi 500, but the keyboard thinks it's a Pi 500+\nPlease use the -f option to manually select a UF2 file"
   fi
@@ -243,6 +240,9 @@ if [[ "$FIRMWARE_UF2" == "unknown" ]]; then
     fi
   fi
   debug "AVAILABLE_FIRMWARE_FILE_VERSION: $AVAILABLE_FIRMWARE_FILE_VERSION"
+  if [[ $VERSION_CHECK_ONLY -eq 1 ]]; then
+    exit 0
+  fi
   if [[ $COMPARE_VERSIONS -eq 1 ]] && [[ "$DETECTED_KEYBOARD_FIRMWARE_VERSION" != "unknown" ]] && [[ "$AVAILABLE_FIRMWARE_FILE_VERSION" != "unknown" ]] && [[ "$DETECTED_KEYBOARD_FIRMWARE_VERSION" == "$AVAILABLE_FIRMWARE_FILE_VERSION" ]]; then
     if [[ $SILENT -eq 0 ]]; then
       echo "Your keyboard firmware is already up to date"
