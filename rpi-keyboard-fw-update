@@ -39,6 +39,7 @@ cleanup() {
   # Remove "ignore RP2040 BOOTSEL" udev rule
   if [[ -f "$UDEV_FILE" ]]; then
     rm -f "$UDEV_FILE"
+    udevadm control --reload-rules
   fi
 }
 trap cleanup EXIT
@@ -311,8 +312,7 @@ else
   debug "Writing new firmware"
   copy_uf2_to_drive "$FIRMWARE_UF2" "$NEW_DRIVE"
   # Remove "ignore RP2040 BOOTSEL" udev rule
-  rm "$UDEV_FILE"
-  udevadm control --reload-rules
+  cleanup
   if [[ $SILENT -eq 0 ]]; then
     echo "Your keyboard firmware has been updated with $FIRMWARE_UF2"
   fi
