@@ -55,7 +55,7 @@ Options:
    -h Display this usage message.
    -i Ignore version checks and always update firmware.
    -s Silent mode.
-   -v Detect keyboard type and firmware version.
+   -v Display keyboard type and firmware version (don't update anything).
    -w Wipe entire flash before updating firmware.
 EOF
   exit 0
