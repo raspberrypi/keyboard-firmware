@@ -46,7 +46,7 @@ trap cleanup EXIT
 
 usage() {
   cat <<EOF
-$SCRIPT_NAME [options]
+sudo $SCRIPT_NAME [options]
 
 Update the firmware in a Pi 500 or Pi 500+ keyboard.
 

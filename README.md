@@ -13,7 +13,7 @@ sudo apt update && sudo apt install rpi-keyboard-fw-update
 ### Usage
 Running `rpi-keyboard-fw-update -h` will display:
 ```
-rpi-keyboard-fw-update [options]
+sudo rpi-keyboard-fw-update [options]
 
 Update the firmware in a Pi 500 or Pi 500+ keyboard.
 
