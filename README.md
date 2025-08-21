@@ -22,7 +22,7 @@ Options:
    -h Display this usage message.
    -i Ignore version checks and always update firmware.
    -s Silent mode.
-   -v Detect keyboard type and firmware version.
+   -v Display keyboard type and firmware version (don't update anything).
    -w Wipe entire flash before updating firmware.
 ```
 The `-h` and `-v` options don't require `sudo`, all other usages of the script do. The simplest way to invoke the script is to run just:
