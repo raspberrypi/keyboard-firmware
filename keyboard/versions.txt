@@ -1,4 +1,4 @@
 pi500-keyboard-fw.uf2=1.00
-pi500plus-keyboard-fw-ansi.uf2=1.10
-pi500plus-keyboard-fw-iso.uf2=1.10
-pi500plus-keyboard-fw-jis.uf2=1.10
+pi500plus-keyboard-fw-ansi.uf2=1.11
+pi500plus-keyboard-fw-iso.uf2=1.11
+pi500plus-keyboard-fw-jis.uf2=1.11
