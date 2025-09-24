@@ -1,4 +1,10 @@
-rpi-keyboard-fw-update (1.0) trixie; urgency=medium
+rpi-keyboard-fw-update (1.0.1) trixie; urgency=medium
+
+  * Rebuild for Trixie.
+
+ -- Andrew Scheller <andrew.scheller@raspberrypi.com>  Wed, 24 Sep 2025 15:16:43 +0100
+
+rpi-keyboard-fw-update (1.0) bookworm; urgency=medium
 
   * Initial release.
   * Keyboard firmware version 1.20 for Pi 500 and Pi 500+ 
