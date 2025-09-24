@@ -1,6 +1,6 @@
-rpi-keyboard-fw-update (1.0) UNRELEASED; urgency=medium
+rpi-keyboard-fw-update (1.0) trixie; urgency=medium
 
   * Initial release.
   * Keyboard firmware version 1.20 for Pi 500 and Pi 500+ 
 
- -- Andrew Scheller <andrew.scheller@raspberrypi.com>  Thu, 24 Apr 2025 17:31:16 +0100
+ -- Andrew Scheller <andrew.scheller@raspberrypi.com>  Wed, 24 Sep 2025 13:27:16 +0100
