@@ -1,5 +1,5 @@
 # keyboard-firmware
-This repository contains the [QMK](https://github.com/raspberrypi/qmk) firmware binaries for the (RP2040-powered) keyboards in the Raspberry Pi 500
+This repository contains the firmware binaries for the (RP2040-powered) keyboards in the Raspberry Pi 500
 and 500+, and a script for updating the firmware.
 
 ## rpi-keyboard-fw-update
@@ -63,3 +63,10 @@ If you want to flash your own custom firmware instead of the pre-supplied firmwa
 skips the model, layout and version-detection steps. Be warned that if your custom keyboard firmware is faulty or non-functional, the keys in your
 keyboard might not work, and so you'd need to use an external USB keyboard (plugged into one of the USB ports on the Raspberry Pi 500/500+) in
 order to run `rpi-keyboard-fw-update` again and flash a working firmware version.
+
+## Firmware sources
+
+The keyboard firmware files (in `keyboard/`) were built from [QMK](https://github.com/raspberrypi/qmk) for firmware versions < 1.20, and
+from [VIAL QMK](https://github.com/raspberrypi/vial-qmk) for firmware versions >= 1.20.
+
+`keyboard/flash_nuke.uf2` was built from [pico-examples](https://github.com/raspberrypi/pico-examples/tree/master/flash/nuke).
